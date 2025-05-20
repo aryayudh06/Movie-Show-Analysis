@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import logging
 from datetime import datetime, timezone
 from pymongo.errors import BulkWriteError
+import json
 
 class ELT():
     def __init__(self):
@@ -150,6 +151,29 @@ class ELT():
             self.logger.error(f"elt pipeline failed: {str(e)}")
         finally:
             # Close MongoDB connection when done
+            self.client.close()
+            self.logger.info("MongoDB connection closed")
+    
+    def enrich_genreMovie(self):
+        with open("genre_map.json", "r", encoding="utf-8") as f:
+            genre_map_raw = json.load(f)
+            genre_map = {int(k): v for k, v in genre_map_raw.items()}
+        try:    
+            self.movies_col = self.db["movies"]
+            all_movies = list(self.movies_col.find())
+
+            enriched_movies = []
+
+            for movie in all_movies:
+                genre_ids = movie.get("genre_ids", [])
+                movie["genres"] = [genre_map.get(gid, "Unknown") for gid in genre_ids]
+                enriched_movies.append(movie) 
+
+            print(f"Prepared {len(enriched_movies)} enriched movies.")
+            return enriched_movies
+        except Exception as e:
+            self.logger.error(f"Error Enriching Movies: {str(e)}")
+        finally:
             self.client.close()
             self.logger.info("MongoDB connection closed")
 

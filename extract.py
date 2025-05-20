@@ -4,6 +4,7 @@ import os
 import time
 from requests.exceptions import RequestException
 import logging
+import json
 
 class ExtractData():
     def __init__(self):
@@ -53,7 +54,35 @@ class ExtractData():
                 break
         
         return all_movies
+    
+    def fetch_tmdb_genre(self, auth_key):
+        base_url = "https://api.themoviedb.org/3/genre/movie/list"
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {auth_key}"
+        }
+        params = {
+            "language": "en-US"
+        }
+        try:
+            response = requests.get(base_url, headers=headers, params=params)
+            response.raise_for_status()
+            
+            data = response.json()
+            genres = data.get("genres", [])  # ✅ correct key
+            
+            genre_map = {g["id"]: g["name"] for g in genres}
+            print("Genre mapping fetched successfully")
+            return genre_map
 
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching genre: {e}")
+            return {}
+
+        finally:
+            print("Done Fetching Genre")
+
+        
     def fetch_tvmaze_shows(self, max_items=10):
         """Fetch shows from TVMaze API with proper error handling"""
         shows = []

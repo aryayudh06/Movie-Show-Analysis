@@ -1,3 +1,4 @@
+import json
 class TransformData():
   def transform_tmdb(data):
     transformed = []
@@ -12,7 +13,8 @@ class TransformData():
             "summary": item.get("overview", "")
         })
     return transformed
-
+  
+    
 def transform_tvmaze(data):
     transformed = []
     for item in data:
@@ -26,6 +28,8 @@ def transform_tvmaze(data):
             "summary": item.get("summary", "")
         })
     return transformed
+       
+
 
 if __name__=="__main__":
    transformer = TransformData()
