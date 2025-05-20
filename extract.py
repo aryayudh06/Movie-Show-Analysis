@@ -109,3 +109,13 @@ if __name__ == "__main__":
         
         tvmaze_data = extract.fetch_tvmaze_shows(max_items=2)
         print("TVMaze Sample:", tvmaze_data[0] if tvmaze_data else "No data")
+    
+    
+    import pandas as pd
+    
+    tmdb_df = pd.DataFrame(tmdb_data)
+    tvmaze_df = pd.DataFrame(tvmaze_data)
+    
+    tmdb_df.info()
+    
+    tvmaze_df.info()
