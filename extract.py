@@ -54,7 +54,7 @@ class ExtractData():
         
         return all_movies
 
-    def fetch_tvmaze_shows(self, max_items=50):
+    def fetch_tvmaze_shows(self, max_items=10):
         """Fetch shows from TVMaze API with proper error handling"""
         shows = []
         page = 0

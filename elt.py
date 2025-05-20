@@ -1,7 +1,7 @@
 from extract import ExtractData
 from transform import TransformData
 import os
-from pymongo import MongoClient
+from pymongo import MongoClient, UpdateOne
 from dotenv import load_dotenv
 import logging
 from datetime import datetime, timezone
@@ -81,13 +81,11 @@ class ELT():
                         # Create a clean copy without MongoDB's _id field if it exists
                         show_data = {k: v for k, v in show.items() if k != '_id'}
                         operations.append(
-                            {
-                                'update_one': {
-                                    'filter': {'id': show['id']},
-                                    'update': {'$set': show_data},
-                                    'upsert': True
-                                }
-                            }
+                            UpdateOne(
+                                {'id': show_data['id']},
+                                {'$set': show_data},
+                                upsert=True
+                            )
                         )
                     
                     if operations:
@@ -115,13 +113,11 @@ class ELT():
                         # Create a clean copy without MongoDB's _id field if it exists
                         movie_data = {k: v for k, v in movie.items() if k != '_id'}
                         operations.append(
-                            {
-                                'update_one': {
-                                    'filter': {'id': movie['id']},
-                                    'update': {'$set': movie_data},
-                                    'upsert': True
-                                }
-                            }
+                            UpdateOne(
+                                {'id': movie_data['id']},
+                                {'$set': movie_data},
+                                upsert=True
+                            )
                         )
                     
                     if operations:
