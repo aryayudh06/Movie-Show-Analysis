@@ -21,7 +21,7 @@ class ELT():
         self.mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
         try:
             self.client = MongoClient(self.mongo_uri)
-            self.db = self.client["entertainment_db"]
+            self.db = self.client["data_lake"]
             self.client.admin.command('ping')  # Test connection
             self.logger.info("Successfully connected to MongoDB")
         except Exception as e:
