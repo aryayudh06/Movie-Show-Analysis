@@ -1,3 +1,6 @@
+import asyncio
+from datetime import datetime, timezone
+import aiohttp
 from dotenv import load_dotenv
 import requests
 import os
@@ -10,141 +13,164 @@ class ExtractData():
     def __init__(self):
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
+        self.session = None
+        self.semaphore = asyncio.Semaphore(4)
+        
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession()
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.session.close()
 
-    def fetch_tmdb_movies(self, auth_key, num_pages=1):
-        """
-        Scrape popular movies from TMDB API across multiple pages
-        
-        Args:
-            api_key (str): Your TMDB API bearer token
-            num_pages (int): Number of pages to scrape (default: 5)
-        
-        Returns:
-            list: A list of movie dictionaries
-        """
+    async def fetch_tmdb_movies(self, auth_key, num_pages:int = 1):
+        """Fetch a single page of TMDB movies"""
         base_url = "https://api.themoviedb.org/3/movie/popular"
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer {auth_key}"
         }
+        params = {"language": "en-US", "page": num_pages}
         
-        all_movies = []
-        
-        for page in range(1, num_pages + 1):
-            params = {
-                "language": "en-US",
-                "page": page
-            }
-            
+        async with self.semaphore:
             try:
-                response = requests.get(base_url, headers=headers, params=params)
-                response.raise_for_status()  # Raise exception for HTTP errors
-                
-                data = response.json()
-                movies = data.get('results', [])
-                all_movies.extend(movies)
-                
-                print(f"Successfully scraped page {page} - {len(movies)} movies")
-                
-                # Add delay to avoid hitting rate limits (TMDB allows 40 requests/10 seconds)
-                time.sleep(0.25)
-                
-            except requests.exceptions.RequestException as e:
-                print(f"Error scraping page {page}: {e}")
+                async with self.session.get(base_url, headers=headers, params=params) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    movies = data.get('results', [])
+                    for movie in movies:
+                        movie['_source'] = "tmdb"
+                        movie['_extracted_at'] = datetime.now(timezone.utc).isoformat()
+                    return movies
+            except Exception as e:
+                self.logger.error(f"Error fetching TMDB page {num_pages}: {str(e)}")
+                return []
+            
+    async def fetch_tmdb_movies_continuous(self, auth_key: str, producer, topic: str):
+        """Continuously fetch TMDB movies and send to Kafka"""
+        page = 1
+        while True:
+            movies = await self.fetch_tmdb_movies(auth_key, page)
+            if not movies:
+                self.logger.info("No more TMDB movies to fetch")
                 break
-        
-        return all_movies
+
+            for movie in movies:
+                try:
+                    # Send message and get future
+                    future = producer.send(topic, value=movie)
+                    
+                    # Wait for the message to be delivered and get metadata
+                    record_metadata = future.get(timeout=10)
+                    
+                    self.logger.info(
+                        f"Sent TMDB movie {movie['id']} to Kafka | "
+                        f"Topic: {record_metadata.topic} | "
+                        f"Partition: {record_metadata.partition} | "
+                        f"Offset: {record_metadata.offset}"
+                    )
+                    
+                    await asyncio.sleep(0.1)  # Small delay between messages
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to send TMDB movie {movie.get('id')}: {str(e)}")
+                    await asyncio.sleep(10)
+
+            page += 1
+            await asyncio.sleep(5)  # Respect rate limits
     
-    def fetch_tmdb_genre(self, auth_key):
-        base_url = "https://api.themoviedb.org/3/genre/movie/list"
-        headers = {
-            "accept": "application/json",
-            "Authorization": f"Bearer {auth_key}"
-        }
-        params = {
-            "language": "en-US"
-        }
-        try:
-            response = requests.get(base_url, headers=headers, params=params)
-            response.raise_for_status()
-            
-            data = response.json()
-            genres = data.get("genres", [])  # ✅ correct key
-            
-            genre_map = {g["id"]: g["name"] for g in genres}
-            print("Genre mapping fetched successfully")
-            return genre_map
-
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching genre: {e}")
-            return {}
-
-        finally:
-            print("Done Fetching Genre")
-
-        
-    def fetch_tvmaze_shows(self, max_items=10):
+    async def fetch_tvmaze_shows(self, page):
         """Fetch shows from TVMaze API with proper error handling"""
         shows = []
-        page = 0
+        url = f"http://api.tvmaze.com/shows?page={page}"
         
-        try:
-            while len(shows) < max_items:
-                url = f"http://api.tvmaze.com/shows?page={page}"
-                headers = {'accept': 'application/json'}
-                
-                self.logger.info(f"Fetching page {page} from TVMaze API")
-                response = requests.get(url, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-
-                if not data:
-                    break
-
-                # Validate and filter shows
-                valid_shows = []
-                for show in data:
-                    if all(k in show for k in ['id', 'name', 'premiered']):
-                        valid_shows.append(show)
-
-                shows.extend(valid_shows)
-                
-                if len(shows) >= max_items:
-                    break
-                
-                page += 1
-                time.sleep(0.5)  # Rate limiting
-
-            return shows[:max_items]
+        async with self.semaphore:
+            try:
+                async with self.session.get(url) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    shows = []
+                    for show in data:
+                        if all(k in show for k in ['id', 'name', 'premiered']):
+                            show['_source'] = 'tvmaze'
+                            show['_extracted_at'] = datetime.now(timezone.utc).isoformat()
+                            shows.append(show)
+                return shows
+            except Exception as e:
+                self.logger.error(f"Error fetching TVMaze page {page}: {str(e)}")
+                return []
             
-        except RequestException as e:
-            self.logger.error(f"Request failed: {str(e)}")
-            return []
-        except Exception as e:
-            self.logger.error(f"Unexpected error: {str(e)}")
-            return []
+    async def fetch_tvmaze_shows_continuous(self, producer, topic):
+        """Continuously fetch TVMaze shows and send to Kafka"""
+        page = 0
+        item_count = 0
+        while True:
+            shows = await self.fetch_tvmaze_shows(page)
+            if not shows:
+                self.logger.info("No more TVMaze shows to fetch")
+                break
+                
+            for show in shows:
+                try:
+                    # Send message and get future
+                    future = producer.send(topic, value=show)
+                    
+                    # Wait for the message to be delivered and get metadata
+                    record_metadata = future.get(timeout=10)
+                    
+                    self.logger.info(
+                        f"Sent TVMaze show {show['id']} to Kafka | "
+                        f"Topic: {record_metadata.topic} | "
+                        f"Partition: {record_metadata.partition} | "
+                        f"Offset: {record_metadata.offset}"
+                    )
+                    
+                    item_count += 1
+                    await asyncio.sleep(0.1)  # Small delay between messages
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to send TVMaze show {show.get('id')}: {str(e)}")
 
+            page += 1
+            await asyncio.sleep(5)  # Respect rate limits
+
+    async def fetch_tmdb_genre(self, auth_key: str):
+        """Fetch TMDB genre mapping"""
+        url = "https://api.themoviedb.org/3/genre/movie/list"
+        headers = {"Authorization": f"Bearer {auth_key}"}
+        params = {"language": "en-US"}
+
+        try:
+            async with self.session.get(url, headers=headers, params=params) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return {g["id"]: g["name"] for g in data.get("genres", [])}
+        except Exception as e:
+            self.logger.error(f"Error fetching genres: {str(e)}")
+            return {}
+            
+            
 if __name__ == "__main__":
-    extract = ExtractData()
-    load_dotenv()
+    pass
+    # extract = ExtractData()
+    # load_dotenv()
     
-    AUTH_KEY = os.getenv("TMDB_AUTH")
-    if not AUTH_KEY:
-        print("Error: TMDB_API not found in .env file")
-    else:
-        # Test with small number first
-        tmdb_data = extract.fetch_tmdb_movies(AUTH_KEY, num_pages=2)
-        print("TMDB Sample:", tmdb_data[0] if tmdb_data else "No data")
+    # AUTH_KEY = os.getenv("TMDB_AUTH")
+    # if not AUTH_KEY:
+    #     print("Error: TMDB_API not found in .env file")
+    # else:
+    #     # Test with small number first
+    #     tmdb_data = extract.fetch_tmdb_movies(AUTH_KEY, num_pages=2)
+    #     print("TMDB Sample:", tmdb_data[0] if tmdb_data else "No data")
         
-        tvmaze_data = extract.fetch_tvmaze_shows(max_items=2)
-        print("TVMaze Sample:", tvmaze_data[0] if tvmaze_data else "No data")
+    #     tvmaze_data = extract.fetch_tvmaze_shows(max_items=2)
+    #     print("TVMaze Sample:", tvmaze_data[0] if tvmaze_data else "No data")
     
     
-    import pandas as pd
+    # import pandas as pd
     
-    tmdb_df = pd.DataFrame(tmdb_data)
-    tvmaze_df = pd.DataFrame(tvmaze_data)
+    # tmdb_df = pd.DataFrame(tmdb_data)
+    # tvmaze_df = pd.DataFrame(tvmaze_data)
     
-    tmdb_df.info()
+    # tmdb_df.info()
     
-    tvmaze_df.info()
+    # tvmaze_df.info()
