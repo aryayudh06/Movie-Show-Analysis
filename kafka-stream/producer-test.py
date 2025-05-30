@@ -29,19 +29,26 @@ def main():
         value_serializer=lambda v: json.dumps(v).encode('utf-8'),
     )
 
-    while True:
-        try:
-            weather = getWeather()
-            logging.debug(f"Weather data: {weather}")
-            producer.send(
-                "weather-data",
-                value=weather
-            ).add_callback(on_send_success).add_errback(on_send_error)
-            logging.info("Weather data produced. Waiting for next...")
-            time.sleep(10)
-        except Exception as e:
-            logging.error(f"Unexpected error: {e}")
-            time.sleep(10)
+    try:
+        while True:
+            try:
+                weather = getWeather()
+                logging.debug(f"Weather data: {weather}")
+                producer.send(
+                    "weather-data",
+                    value=weather
+                ).add_callback(on_send_success).add_errback(on_send_error)
+                logging.info("Weather data produced. Waiting for next...")
+                time.sleep(10)
+            except Exception as e:
+                logging.error(f"Unexpected error: {e}")
+                time.sleep(10)
+    except KeyboardInterrupt:
+        logging.info("Shutdown signal received. Flushing and closing Kafka producer...")
+    finally:
+        producer.flush()  # Ensure all messages are sent
+        producer.close()  # Properly close the producer
+        logging.info("Kafka producer closed.")
 
 if __name__ == "__main__":
     main()
