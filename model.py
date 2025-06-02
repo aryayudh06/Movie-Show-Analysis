@@ -1,302 +1,382 @@
 import pandas as pd
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.layers import Input, Dense, Dropout
-from tensorflow.keras.models import Model
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping
-from transformers import RobertaTokenizer, TFRobertaModel
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.metrics import classification_report
 import ast
-import logging
+from sklearn.model_selection import train_test_split
+import torch
+from transformers import RobertaTokenizer, RobertaForSequenceClassification, AdamW
+from torch.utils.data import Dataset, DataLoader
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report, accuracy_score
+from tqdm import tqdm
+import optuna
+from optuna.trial import TrialState
+import os
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Set random seeds for reproducibility
+torch.manual_seed(42)
+np.random.seed(42)
 
-class GenrePredictorRoBERTa:
-    def __init__(self, csv_path, max_length=128, batch_size=32, epochs=3):
-        self.csv_path = csv_path
-        self.max_length = max_length
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
-        self.roberta_model = TFRobertaModel.from_pretrained('roberta-base')
-        self.mlb = MultiLabelBinarizer()
-        
-    def load_and_preprocess_data(self):
-        """
-        Load data from CSV and preprocess for genre prediction
-        """
-        logger.info("Loading and preprocessing data...")
-        
-        # Load CSV data
-        df = pd.read_csv(self.csv_path)
-        
-        # Clean and prepare data
-        df = self._clean_data(df)
-        
-        # Extract features and labels
-        texts = df['title'] + " " + df['summary'].fillna('')
-        
-        # Convert string representation of lists to actual lists
-        genres = self._safe_convert_genres(df['genres'])
-        
-        # Multi-label binarization
-        self.mlb.fit(genres)
-        labels = self.mlb.transform(genres)
-        
-        # Split data
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            texts, labels, test_size=0.2, random_state=42
-        )
-        
-        logger.info(f"Data loaded. {len(df)} samples total.")
-        logger.info(f"Number of unique genres: {len(self.mlb.classes_)}")
-        logger.info(f"Train samples: {len(self.X_train)}, Test samples: {len(self.X_test)}")
-        
-    def _safe_convert_genres(self, genre_series):
-        """
-        Safely convert genre strings to lists, handling various formats
-        """
-        converted = []
-        for item in genre_series:
-            if pd.isna(item) or item == '[]' or item == '':
-                converted.append([])
-            elif isinstance(item, str):
-                try:
-                    # Handle string representation of list
-                    parsed = ast.literal_eval(item)
-                    if isinstance(parsed, list):
-                        converted.append(parsed)
-                    else:
-                        # If it's a single string, make it a list
-                        converted.append([parsed])
-                except (ValueError, SyntaxError):
-                    # If literal_eval fails, split by comma or treat as single genre
-                    if ',' in item:
-                        converted.append([g.strip() for g in item.split(',')])
-                    else:
-                        converted.append([item.strip()])
-            elif isinstance(item, (list, np.ndarray)):
-                converted.append(list(item))
-            else:
-                converted.append([])
-        return converted
-    
-    def _clean_data(self, df):
-        """
-        Clean the input DataFrame
-        """
-        # Drop rows with missing critical data
-        df = df.dropna(subset=['title'])
-        
-        # Fill missing summaries with empty string
-        df['summary'] = df['summary'].fillna('')
-        
-        # Ensure genres column exists (create empty list if missing)
-        if 'genres' not in df.columns:
-            df['genres'] = [[] for _ in range(len(df))]
-        
-        return df
-    
-    def _encode_texts(self, texts):
-        encoded = self.tokenizer(
-            texts.tolist(),
-            padding='max_length',
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors='np'  # Changed from 'tf' to 'np'
-        )
-        return encoded
-    
-    def build_model(self):
-        """
-        Build the RoBERTa-based classification model
-        """
-        logger.info("Building model...")
-        
-        # Input layers
-        input_ids = Input(shape=(self.max_length,), dtype=tf.int32, name='input_ids')
-        attention_mask = Input(shape=(self.max_length,), dtype=tf.int32, name='attention_mask')
-        
-        # Create a custom layer to handle the RoBERTa model
-        class RobertaLayer(tf.keras.layers.Layer):
-            def __init__(self, roberta_model, **kwargs):
-                super(RobertaLayer, self).__init__(**kwargs)
-                self.roberta_model = roberta_model
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
 
-            def call(self, inputs):
-                input_ids, attention_mask = inputs
-                outputs = self.roberta_model(input_ids, attention_mask=attention_mask)
-                return outputs[1]  # Return the pooled output
+# 1. Data Loading and Preparation
+def load_and_prepare_data(filepath):
+    """Load and preprocess the dataset"""
+    data = pd.read_csv(filepath)
+    
+    # Convert stringified lists to actual Python lists
+    data['genres'] = data['genres'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+    
+    # Extract the first genre as our label
+    data['genres'] = data['genres'].apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else None)
+    
+    # Combine title and summary for text input
+    texts = data['title'] + " " + data['summary'].fillna('')
+    labels = data['genres'].fillna('Unknown')
+    
+    return texts, labels
 
-            def get_config(self):
-                config = super().get_config()
-                # Note: We can't serialize the roberta_model itself, so we'll just save its config
-                config.update({
-                    "roberta_model_config": self.roberta_model.config.to_dict(),
-                })
-                return config
-
-            @classmethod
-            def from_config(cls, config):
-                # Recreate the roberta_model from config
-                roberta_config = config.pop("roberta_model_config")
-                roberta_model = TFRobertaModel.from_pretrained('roberta-base', config=roberta_config)
-                return cls(roberta_model, **config)
-        
-        # Use the custom layer
-        roberta_layer = RobertaLayer(self.roberta_model)
-        roberta_output = roberta_layer([input_ids, attention_mask])
-        
-        # Classification head
-        x = Dropout(0.1)(roberta_output)
-        x = Dense(256, activation='relu')(x)
-        x = Dropout(0.1)(x)
-        outputs = Dense(len(self.mlb.classes_), activation='sigmoid')(x)
-        
-        # Compile model
-        self.model = Model(inputs=[input_ids, attention_mask], outputs=outputs)
-        self.model.compile(
-            optimizer=Adam(learning_rate=3e-5),
-            loss='binary_crossentropy',
-            metrics=['accuracy']
-        )
-        
-        logger.info("Model built successfully.")
-        
-    def train(self):
-        """
-        Train the model
-        """
-        logger.info("Preparing training data...")
-        
-        # Encode training data
-        train_encoded = self._encode_texts(self.X_train)
-        
-        # Extract numpy arrays
-        input_ids = train_encoded['input_ids']
-        attention_mask = train_encoded['attention_mask']
-        labels = self.y_train
-        
-        # Early stopping callback
-        early_stopping = EarlyStopping(monitor='val_loss', patience=2, restore_best_weights=True)
-        
-        logger.info("Training model...")
-        self.history = self.model.fit(
-            x={'input_ids': input_ids, 'attention_mask': attention_mask},
-            y=labels,
-            batch_size=self.batch_size,
-            epochs=self.epochs,
-            validation_split=0.1,
-            callbacks=[early_stopping],
-            shuffle=True
-        )
-        
-        logger.info("Training completed.")
+# 2. Dataset Class
+class MovieGenreDataset(Dataset):
+    def __init__(self, texts, labels, tokenizer, max_len):
+        self.texts = texts
+        self.labels = labels
+        self.tokenizer = tokenizer
+        self.max_len = max_len
     
-    def evaluate(self):
-        """
-        Evaluate the model on test data
-        """
-        logger.info("Evaluating model...")
-        
-        # Encode test data
-        test_encoded = self._encode_texts(self.X_test)
-        
-        # Extract numpy arrays from the BatchEncoding object
-        input_ids = test_encoded['input_ids']
-        attention_mask = test_encoded['attention_mask']
-        
-        # Predict using the extracted arrays
-        y_pred = self.model.predict(
-            {'input_ids': input_ids, 'attention_mask': attention_mask}
-        )
-        y_pred_binary = (y_pred > 0.5).astype(int)
-        
-        # Print classification report
-        report = classification_report(
-            self.y_test,
-            y_pred_binary,
-            target_names=self.mlb.classes_
-        )
-        logger.info("\nClassification Report:\n" + report)
-        
-        return report
+    def __len__(self):
+        return len(self.texts)
     
-    def save_model(self, model_dir='genre_roberta_model.keras'):
-        """
-        Save the trained model
-        """
-        self.model.save(model_dir)
-        logger.info(f"Model saved to {model_dir}")
-    
-    def predict_genres(self, text, threshold=0.5):
-        """
-        Predict genres for new text
-        """
-        # Encode input text
-        encoded = self.tokenizer(
+    def __getitem__(self, idx):
+        text = str(self.texts.iloc[idx] if isinstance(self.texts, pd.Series) else self.texts[idx])
+        label = self.labels[idx]
+        
+        encoding = self.tokenizer.encode_plus(
             text,
+            add_special_tokens=True,
+            max_length=self.max_len,
+            return_token_type_ids=False,
             padding='max_length',
             truncation=True,
-            max_length=self.max_length,
-            return_tensors='tf'
+            return_attention_mask=True,
+            return_tensors='pt',
         )
         
-        # Convert BatchEncoding to a format Keras can understand
-        inputs = {
-            'input_ids': encoded['input_ids'],
-            'attention_mask': encoded['attention_mask']
+        return {
+            'input_ids': encoding['input_ids'].flatten(),
+            'attention_mask': encoding['attention_mask'].flatten(),
+            'labels': torch.tensor(label, dtype=torch.long)
         }
-        
-        # Make prediction
-        pred = self.model.predict(inputs)
-        
-        # Apply threshold and get genre names
-        predicted_genres = [
-            self.mlb.classes_[i] 
-            for i, val in enumerate(pred[0]) 
-            if val > threshold
-        ]
-        
-        return predicted_genres
 
-def main(csv_path='media_data.csv'):
-    # Initialize genre predictor
-    predictor = GenrePredictorRoBERTa(csv_path)
+# 3. Optuna Optimization Function
+def objective(trial, texts, labels, tokenizer):
+    """Optuna objective function for hyperparameter optimization"""
+    # Print trial information
+    print(f"\nStarting trial {trial.number}...")
     
-    try:
-        # Load and preprocess data
-        predictor.load_and_preprocess_data()
+    # Suggest hyperparameters
+    learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True)
+    batch_size = trial.suggest_categorical("batch_size", [8])
+    num_epochs = trial.suggest_int("num_epochs", 1, 1)
+    max_len = trial.suggest_categorical("max_len", [128])
+    
+    # learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True)
+    # batch_size = trial.suggest_categorical("batch_size", [8, 16, 32])
+    # num_epochs = trial.suggest_int("num_epochs", 2, 5)
+    # max_len = trial.suggest_categorical("max_len", [128, 256, 512])
+    
+    print(f"Trial {trial.number} parameters:")
+    print(f"  learning_rate: {learning_rate:.2e}")
+    print(f"  batch_size: {batch_size}")
+    print(f"  num_epochs: {num_epochs}")
+    print(f"  max_len: {max_len}")
+    
+    # Split data (do this inside objective to get different splits per trial)
+    X_train, X_test, y_train, y_test = train_test_split(
+        texts, labels, test_size=0.2, random_state=42
+    )
+    
+    # Encode labels
+    label_encoder = LabelEncoder()
+    y_train_encoded = label_encoder.fit_transform(y_train)
+    y_test_encoded = label_encoder.transform(y_test)
+    
+    # Initialize model
+    model = RobertaForSequenceClassification.from_pretrained(
+        'roberta-base',
+        num_labels=len(label_encoder.classes_)
+    ).to(device)
+    
+    optimizer = AdamW(model.parameters(), lr=learning_rate)
+    
+    # Create data loaders
+    train_dataset = MovieGenreDataset(X_train, y_train_encoded, tokenizer, max_len)
+    test_dataset = MovieGenreDataset(X_test, y_test_encoded, tokenizer, max_len)
+    
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+    
+    # Training loop with progress indication
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0
+        progress_bar = tqdm(train_loader, desc=f'Trial {trial.number} Epoch {epoch + 1}/{num_epochs}', leave=False)
         
-        # Build model
-        predictor.build_model()
+        for batch in progress_bar:
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['labels'].to(device)
+            
+            optimizer.zero_grad()
+            outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                labels=labels
+            )
+            
+            loss = outputs.loss
+            total_loss += loss.item()
+            loss.backward()
+            optimizer.step()
+            
+            progress_bar.set_postfix({'loss': loss.item()})
         
-        # Train model
-        predictor.train()
-        
-        # Evaluate model
-        report = predictor.evaluate()
-        
-        # Save model
-        predictor.save_model()
-        
-        # Example prediction
-        example_text = "A group of astronauts travel through a wormhole in search of a new home for humanity"
-        predicted_genres = predictor.predict_genres(example_text)
-        logger.info(f"\nExample Prediction for: '{example_text}'")
-        logger.info(f"Predicted genres: {predicted_genres}")
-        
-        return report
-        
-    except Exception as e:
-        logger.error(f"Error in genre prediction pipeline: {str(e)}")
-        raise
+        avg_train_loss = total_loss / len(train_loader)
+        print(f'Trial {trial.number} Epoch {epoch + 1} - Training loss: {avg_train_loss:.4f}')
+    
+    # Validation
+    model.eval()
+    predictions = []
+    true_labels = []
+    
+    with torch.no_grad():
+        for batch in tqdm(test_loader, desc=f'Trial {trial.number} Validating'):
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['labels'].to(device)
+            
+            outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask
+            )
+            
+            _, preds = torch.max(outputs.logits, dim=1)
+            predictions.extend(preds.cpu().numpy())
+            true_labels.extend(labels.cpu().numpy())
+    
+    # Calculate accuracy
+    accuracy = accuracy_score(true_labels, predictions)
+    print(f"Trial {trial.number} completed with accuracy: {accuracy:.4f}")
+    return accuracy
 
+# 4. Main Training Function
+def train_model(texts, labels, best_params=None):
+    """Train the model with optional best parameters from Optuna"""
+    # Encode labels
+    label_encoder = LabelEncoder()
+    labels_encoded = label_encoder.fit_transform(labels)
+    
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(
+        texts, labels_encoded, test_size=0.2, random_state=42
+    )
+    
+    # Initialize tokenizer
+    tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
+    
+    # If no best_params provided, use defaults
+    if best_params is None:
+        best_params = {
+            'learning_rate': 2e-5,
+            'batch_size': 16,
+            'num_epochs': 3,
+            'max_len': 256
+        }
+    
+    # Initialize model
+    model = RobertaForSequenceClassification.from_pretrained(
+        'roberta-base',
+        num_labels=len(label_encoder.classes_)
+    ).to(device)
+    
+    optimizer = AdamW(model.parameters(), lr=best_params['learning_rate'])
+    
+    # Create data loaders
+    train_dataset = MovieGenreDataset(X_train, y_train, tokenizer, best_params['max_len'])
+    test_dataset = MovieGenreDataset(X_test, y_test, tokenizer, best_params['max_len'])
+    
+    train_loader = DataLoader(train_dataset, batch_size=best_params['batch_size'], shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=best_params['batch_size'])
+    
+    # Training loop
+    for epoch in range(best_params['num_epochs']):
+        model.train()
+        total_loss = 0
+        
+        progress_bar = tqdm(train_loader, desc=f'Epoch {epoch + 1}/{best_params["num_epochs"]}', leave=False)
+        for batch in progress_bar:
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['labels'].to(device)
+            
+            optimizer.zero_grad()
+            outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                labels=labels
+            )
+            
+            loss = outputs.loss
+            total_loss += loss.item()
+            loss.backward()
+            optimizer.step()
+            
+            progress_bar.set_postfix({'loss': loss.item()})
+        
+        avg_train_loss = total_loss / len(train_loader)
+        print(f'Epoch {epoch + 1} - Training loss: {avg_train_loss:.4f}')
+        
+        # Validation
+        model.eval()
+        predictions = []
+        true_labels = []
+        
+        with torch.no_grad():
+            for batch in test_loader:
+                input_ids = batch['input_ids'].to(device)
+                attention_mask = batch['attention_mask'].to(device)
+                labels = batch['labels'].to(device)
+                
+                outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask
+                )
+                
+                _, preds = torch.max(outputs.logits, dim=1)
+                predictions.extend(preds.cpu().numpy())
+                true_labels.extend(labels.cpu().numpy())
+        
+        present_labels = np.unique(true_labels)
+        present_classes = label_encoder.classes_[present_labels]
+
+        print(classification_report(
+            true_labels,
+            predictions,
+            labels=present_labels,  # Only evaluate on present classes
+            target_names=present_classes,  # Only show names for present classes
+            zero_division=0
+        ))
+    
+    return model, tokenizer, label_encoder
+
+# 5. Prediction Function
+def predict_genre(text, model, tokenizer, label_encoder, max_len=256):
+    """Predict genre for a single text input"""
+    model.eval()
+    encoding = tokenizer.encode_plus(
+        text,
+        add_special_tokens=True,
+        max_length=max_len,
+        return_token_type_ids=False,
+        padding='max_length',
+        truncation=True,
+        return_attention_mask=True,
+        return_tensors='pt',
+    )
+    
+    input_ids = encoding['input_ids'].to(device)
+    attention_mask = encoding['attention_mask'].to(device)
+    
+    with torch.no_grad():
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+    
+    _, prediction = torch.max(outputs.logits, dim=1)
+    return label_encoder.inverse_transform(prediction.cpu().numpy())[0]
+
+# 6. Save and Load Functions
+def save_model(model, tokenizer, label_encoder, save_dir):
+    """Save model, tokenizer and label encoder"""
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    
+    # Save model and tokenizer
+    model.save_pretrained(save_dir)
+    tokenizer.save_pretrained(save_dir)
+    
+    # Save label encoder
+    np.save(os.path.join(save_dir, 'label_encoder_classes.npy'), label_encoder.classes_)
+    np.save(os.path.join(save_dir, 'label_encoder_params.npy'), label_encoder.get_params())
+
+def load_model(save_dir):
+    """Load model, tokenizer and label encoder"""
+    # Load model and tokenizer
+    tokenizer = RobertaTokenizer.from_pretrained(save_dir)
+    model = RobertaForSequenceClassification.from_pretrained(save_dir).to(device)
+    
+    # Load label encoder
+    label_encoder = LabelEncoder()
+    label_encoder.classes_ = np.load(os.path.join(save_dir, 'label_encoder_classes.npy'), allow_pickle=True)
+    label_encoder.set_params(**np.load(os.path.join(save_dir, 'label_encoder_params.npy'), allow_pickle=True).item())
+    
+    return model, tokenizer, label_encoder
+
+# Main Execution
 if __name__ == "__main__":
-    # Run the pipeline
-    main()
+    # Load and prepare data
+    texts, labels = load_and_prepare_data("media_data.csv")
+    
+    # Initialize tokenizer for Optuna
+    tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
+    
+    # Run Optuna optimization (comment out if you just want to train with defaults)
+    print("Running Optuna optimization...")
+    
+    # Add a callback function to print progress
+    def print_trial_status(study, trial):
+        print(f"\nTrial {trial.number} completed with value: {trial.value:.4f}")
+        print(f"Best trial until now: {study.best_trial.number} with value: {study.best_trial.value:.4f}")
+        print(f"Current best parameters: {study.best_trial.params}")
+    
+    study = optuna.create_study(direction="maximize")
+    print(f"Starting optimization with {1} trials...")
+    study.optimize(
+        lambda trial: objective(trial, texts, labels, tokenizer),
+        n_trials=1,
+        callbacks=[print_trial_status],
+        gc_after_trial=True
+    )
+    
+    print("\nOptimization completed!")
+    print("\nBest trial:")
+    trial = study.best_trial
+    print(f"  Accuracy: {trial.value:.4f}")
+    print("  Params: ")
+    for key, value in trial.params.items():
+        print(f"    {key}: {value}")
+    
+    # Train final model with best parameters
+    print("\nTraining final model with best parameters...")
+    best_params = trial.params
+    model, tokenizer, label_encoder = train_model(texts, labels, best_params)
+    
+    # Save the model
+    save_dir = "./movie_genre_classifier"
+    save_model(model, tokenizer, label_encoder, save_dir)
+    print(f"Model saved to {save_dir}")
+    
+    # Example prediction
+    sample_text = """A young wizard named Harry Potter discovers his magical heritage and begins 
+                   his education at Hogwarts School of Witchcraft and Wizardry, where he makes 
+                   friends, battles dark forces, and uncovers secrets about his past."""
+    
+    # Load the saved model (demonstration)
+    loaded_model, loaded_tokenizer, loaded_label_encoder = load_model(save_dir)
+    
+    predicted_genre = predict_genre(
+        sample_text, 
+        loaded_model, 
+        loaded_tokenizer, 
+        loaded_label_encoder
+    )
+    print(f"\nPredicted genre for sample text: {predicted_genre}")
