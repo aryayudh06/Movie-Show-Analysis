@@ -3,3 +3,7 @@ __pycache__
 __pycache
 /data_stream
 .pyc
+.log
+.py.log
+config\airflow.cfg
+logs
