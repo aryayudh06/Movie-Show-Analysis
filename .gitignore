@@ -3,7 +3,25 @@ __pycache__
 __pycache
 /data_stream
 .pyc
-.log
+*.log
 .py.log
 config\airflow.cfg
-logs
+# Airflow sensitive files
+airflow.cfg
+airflow-webserver.pid
+*.key
+*.pem
+*.fernet
+secrets/
+.env
+.env*
+*.env
+airflow/fernet_key.txt
+airflow/secrets/*
+!airflow/secrets/.gitkeep
+airflow/logs/
+airflow/plugins/
+airflow/dags/__pycache__/
+airflow/dags/*.pyc
+airflow/airflow.db
+airflow/webserver_config.py
