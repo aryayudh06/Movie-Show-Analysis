@@ -17,7 +17,7 @@ class MongoDBToCSVExporter:
         self.olap_db = self.olap_client["OLAP"]
         self.unified_collection = self.olap_db["media"]
         
-    def fetch_all_data(self, batch_size: int = 1000) -> List[Dict[str, Any]]:
+    def fetch_all_data(self, batch_size: int = 10000) -> List[Dict[str, Any]]:
         """Fetch all data from the unified collection"""
         self.logger.info("Fetching data from MongoDB OLAP database...")
         cursor = self.unified_collection.find({})
