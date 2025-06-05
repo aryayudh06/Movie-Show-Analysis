@@ -21,7 +21,7 @@ Pastikan Anda sudah menginstall [Docker](https://www.docker.com/) dan [Docker Co
    docker compose up
 
 2. Buka Airflow UI di browser:
-   [text](http://localhost:8080)
+   http://localhost:8080
 
 3. Login dengan default user (Cek di konfigurasi compose), lalu jalankan DAG bernama:
    streaming_elt_pipeline
