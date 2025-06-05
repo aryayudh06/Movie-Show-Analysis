@@ -7,8 +7,8 @@ Project ini bertujuan untuk menganalisis data acara film dan streaming menggunak
 - Python
 - Apache Airflow
 - Docker & Docker Compose
-- Pandas
-- Jupyter Notebook (untuk eksplorasi data)
+- Apache Kafka (Streaming Processing)
+- TMDB & TvMaze API
 
 ## 🚀 Cara Menjalankan Project
 
