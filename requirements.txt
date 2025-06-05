@@ -1,0 +1,6 @@
+aiohttp==3.11.13
+apache-airflow==3.0.1
+kafka_python==2.2.10
+pymongo==4.13.0
+python-dotenv==1.1.0
+Requests==2.32.3
