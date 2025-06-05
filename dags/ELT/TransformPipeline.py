@@ -1,24 +1,26 @@
 import asyncio
+from pathlib import Path
 from pymongo import MongoClient, UpdateOne
 import logging
 from dotenv import load_dotenv
 import os
 from typing import Dict, Any, List
-from transform import TransformData
+from ELT.transform import TransformData
 
 class MongoDBProcessor:
     def __init__(self):
-        load_dotenv()
+        env_path = Path(__file__).resolve().parent.parent.parent / "config" / ".env"
+        load_dotenv(env_path)
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         
         # MongoDB config for Data Lake (source)
-        self.data_lake_uri = os.getenv("DATA_LAKE_MONGO_URI", "mongodb://localhost:27017/")
+        self.data_lake_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
         self.data_lake_client = MongoClient(self.data_lake_uri)
         self.data_lake_db = self.data_lake_client["data_lake"]
         
         # MongoDB config for OLAP (target)
-        self.olap_uri = os.getenv("OLAP_MONGO_URI", "mongodb://localhost:27017/")
+        self.olap_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
         self.olap_client = MongoClient(self.olap_uri)
         self.olap_db = self.olap_client["OLAP"]
         

@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from ELT.extract import ExtractData
 from ELT.transform import TransformData
 import os
@@ -17,7 +18,8 @@ class ELT():
         
         self.extractor = ExtractData()
         self.transformer = TransformData()
-        load_dotenv()
+        env_path = Path(__file__).resolve().parent.parent.parent / "config" / ".env"
+        load_dotenv(env_path)
         
         self.kafkaManager = KafkaManager(os.getenv("KAFKA_BROKER", "localhost:9092"))
         self.kafkaProducer =  self.kafkaManager.createProducer()
@@ -40,9 +42,8 @@ class ELT():
         #     raise
 
     async def run_streaming(self):
-        """Extract data from both APIs"""
+        """Extract data from both APIs for 30 seconds then shutdown"""
         try:
-            # await self.kafkaProducer.start()
             self.logger.info("Starting data extraction and publishing to Kafka")
             
             async with ExtractData() as extractor:
@@ -59,16 +60,33 @@ class ELT():
                     )
                 )
 
-                # Wait for both tasks to complete (they won't unless error occurs)
-                await asyncio.gather(tmdb_task, tvmaze_task)
+                # Run for 30 seconds then cancel
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(tmdb_task, tvmaze_task),
+                        timeout=30.0
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.info("30-second streaming period completed")
 
         except asyncio.CancelledError:
             self.logger.info("Pipeline shutdown requested")
         except Exception as e:
             self.logger.error(f"Pipeline failed: {str(e)}")
+            raise
         finally:
-            self.kafkaProducer.flush()  # No await needed
-            self.kafkaProducer.close()  # No await needed
+            # Cancel any running tasks
+            for task in [tmdb_task, tvmaze_task]:
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+            
+            # Clean up Kafka producer
+            self.kafkaProducer.flush()
+            self.kafkaProducer.close()
             self.logger.info("Kafka producer stopped")
     
     def consume_and_process(self):

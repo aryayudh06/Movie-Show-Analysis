@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from pymongo import MongoClient
 import logging
 from dotenv import load_dotenv
@@ -8,8 +9,9 @@ from kafka_stream.kafkaManager import KafkaManager
 from typing import Dict, Any
 
 class ELTConsumer:
-    def __init__(self):
-        load_dotenv()
+    def __init__(self, max_runtime_seconds=60):
+        env_path = Path(__file__).resolve().parent.parent.parent / "config" / ".env"
+        load_dotenv(env_path)
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         
@@ -30,7 +32,8 @@ class ELTConsumer:
         
         self.kafkaManager = KafkaManager(os.getenv("KAFKA_BROKER", "localhost:9092"))
         self.consumer = self.kafkaManager.createConsumer(self.raw_topic, self.group_id)
-        
+        self.max_runtime = max_runtime_seconds
+        self.shutdown_event = asyncio.Event()
         
         # Create indexes
         self._create_indexes()
@@ -76,15 +79,22 @@ class ELTConsumer:
 
     async def consume_messages(self):
         """Start consuming messages from Kafka"""
+        start_time = asyncio.get_event_loop().time()
         try:
             self.logger.info(f"Started consumer for topic {self.raw_topic}")
-            
-            for message in self.consumer:  # Regular for loop instead of async for
-                try:
-                    await self.process_message(message.value)
-                except Exception as e:
-                    self.logger.error(f"Error processing message: {str(e)}")
-                    
+            self.logger.info(f"consumer (max runtime: {self.max_runtime}s)")
+
+            while not self.shutdown_event.is_set():
+                elapsed = asyncio.get_event_loop().time() - start_time
+                if elapsed >= self.max_runtime:
+                    self.logger.info(f"Max runtime reached ({self.max_runtime}s)")
+                    break
+                
+                records = self.consumer.poll(timeout_ms=100)
+                
+                for _, messages in records.items():
+                    for message in messages:
+                        await self.process_message(message.value)
         except asyncio.CancelledError:
             self.logger.info("Consumer shutdown requested")
         except Exception as e:
@@ -93,6 +103,9 @@ class ELTConsumer:
             self.consumer.close()
             self.client.close()
             self.logger.info("Consumer stopped and resources cleaned up")
+    async def stop(self):
+        """Initiate graceful shutdown"""
+        self.shutdown_event.set()
 
 async def main():
     consumer = ELTConsumer()
