@@ -75,16 +75,11 @@ def objective(trial, texts, labels, tokenizer):
     # Print trial information
     print(f"\nStarting trial {trial.number}...")
     
-    # Suggest hyperparameters
+    # Suggest hyperparameters    
     learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True)
-    batch_size = trial.suggest_categorical("batch_size", [8])
-    num_epochs = trial.suggest_int("num_epochs", 1, 1)
-    max_len = trial.suggest_categorical("max_len", [128])
-    
-    # learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True)
-    # batch_size = trial.suggest_categorical("batch_size", [8, 16, 32])
-    # num_epochs = trial.suggest_int("num_epochs", 2, 5)
-    # max_len = trial.suggest_categorical("max_len", [128, 256, 512])
+    batch_size = trial.suggest_categorical("batch_size", [8, 16, 32])
+    num_epochs = trial.suggest_int("num_epochs", 2, 5)
+    max_len = trial.suggest_categorical("max_len", [128, 256, 512])
     
     print(f"Trial {trial.number} parameters:")
     print(f"  learning_rate: {learning_rate:.2e}")
@@ -339,10 +334,10 @@ if __name__ == "__main__":
         print(f"Current best parameters: {study.best_trial.params}")
     
     study = optuna.create_study(direction="maximize")
-    print(f"Starting optimization with {1} trials...")
+    print(f"Starting optimization with {20} trials...")
     study.optimize(
         lambda trial: objective(trial, texts, labels, tokenizer),
-        n_trials=1,
+        n_trials=20,
         callbacks=[print_trial_status],
         gc_after_trial=True
     )
