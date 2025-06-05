@@ -25,3 +25,4 @@ airflow/dags/__pycache__/
 airflow/dags/*.pyc
 airflow/airflow.db
 airflow/webserver_config.py
+/movie_genre_classifier
