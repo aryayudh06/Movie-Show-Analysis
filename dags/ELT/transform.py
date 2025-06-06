@@ -34,8 +34,6 @@ class TransformData:
                     "genres": item.get("genres", []),
                     "rating": average_rating,
                     "summary": self._clean_html(item.get("summary", "")),
-                    "status": item.get("status", ""),
-                    "network": item.get("network", {}).get("name", "") if isinstance(item.get("network"), dict) else "",
                     "runtime": int(runtime),
                     "source": "tvmaze"
                 }
@@ -64,8 +62,6 @@ class TransformData:
                     "genres": item.get("genre_ids", []),
                     "rating": rating,
                     "summary": self._clean_html(item.get("overview", "")),
-                    "popularity": float(item.get("popularity", 0)) if item.get("popularity") is not None else 0.0,
-                    "original_language": item.get("original_language", ""),
                     "runtime": int(item.get("runtime", 0)) if item.get("runtime") is not None else 0,
                     "source": "tmdb"
                 }
