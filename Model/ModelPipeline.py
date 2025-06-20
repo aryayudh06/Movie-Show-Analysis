@@ -1,5 +1,6 @@
 import subprocess
 import logging
+import os
 from typing import Optional, Dict, Any
 
 # Konfigurasi logging
@@ -8,11 +9,16 @@ logger = logging.getLogger(__name__)
 
 class PipelineRunner:
     def __init__(self):
-        self.dataset_importer_script = "DatasetImporter.py"
-        self.model_script = "model.py"
+        base_dir = os.path.dirname(os.path.abspath(__file__))  # direktori file ini
+        self.dataset_importer_script = os.path.join(base_dir, "DatasetImporter.py")
+        self.model_script = os.path.join(base_dir, "model.py")
         
     def run_script(self, script_path: str, args: Optional[Dict[str, Any]] = None) -> bool:
         """Menjalankan script Python dengan subprocess"""
+        if not os.path.exists(script_path):
+            logger.error(f"File tidak ditemukan: {script_path}")
+            return False
+
         try:
             cmd = ["python", script_path]
             if args:

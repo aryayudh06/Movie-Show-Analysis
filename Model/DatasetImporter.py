@@ -42,7 +42,7 @@ class MongoDBToCSVExporter:
             10770: "TV Movie"
         }
 
-        self.csv_path = "dags/Model/data.csv"
+        self.csv_path = "Model/data.csv"
         
     def fetch_all_data(self, batch_size: int = 10000) -> List[Dict[str, Any]]:
         """Fetch all data from the unified collection"""
