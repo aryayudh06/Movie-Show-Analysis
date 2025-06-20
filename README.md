@@ -1,4 +1,4 @@
-Absolutely! Here's your updated `README.md` with a **Prerequisites** section that includes instructions for installing MongoDB locally:
+Sure! Here's your updated `README.md`, now reflecting that the JWT key should be added under the `&airflow-common-env` anchor in the `docker-compose.yml` file:
 
 ````markdown
 # 🎬 Movie Show Analysis with Apache Airflow
@@ -25,18 +25,17 @@ Before running the project, make sure you have the following installed:
 
 - [Docker](https://www.docker.com/)
 - [Docker Compose](https://docs.docker.com/compose/)
-- [Python 3.8+](https://www.python.org/downloads/)
+- [Python 3.10+](https://www.python.org/downloads/)
 - [MongoDB Community Edition](https://www.mongodb.com/try/download/community)
 
 ### Install MongoDB Locally
 
-1. **Download MongoDB**:
+1. **Download MongoDB**:  
    Visit the [MongoDB Community Download Page](https://www.mongodb.com/try/download/community) and download the version for your operating system.
 
 2. **Install MongoDB**:
-   Follow the instructions for your platform:
-   - **Windows**: Use the installer `.msi` and ensure "MongoDB as a Service" is checked.
-   - **macOS**: Install via Homebrew:
+   - **Windows**: Use the `.msi` installer and make sure "MongoDB as a Service" is checked.
+   - **macOS**:
      ```bash
      brew tap mongodb/brew
      brew install mongodb-community@6.0
@@ -56,7 +55,7 @@ Before running the project, make sure you have the following installed:
      ```
    - **Windows**: MongoDB should start automatically as a service. You can verify via `services.msc`.
 
-4. **Verify MongoDB** is running:
+4. **Verify MongoDB is Running**:
    ```bash
    mongo
 ````
@@ -73,11 +72,23 @@ mongosh
 
 ### Additional Configuration (if using JWT Authentication in Airflow)
 
-If your Airflow setup requires JWT for API authentication, add the following environment variable to your `docker-compose.yml`:
+If your Airflow setup requires JWT for API authentication, add the following environment variable under the `&airflow-common-env` section in your `docker-compose.yml`:
 
 ```yaml
 AIRFLOW_API_AUTH_JWT_SECRET: my_super_secret_key
 ```
+
+Example:
+
+```yaml
+x-airflow-common-env: &airflow-common-env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+  AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.jwt_auth'
+  AIRFLOW_API_AUTH_JWT_SECRET: my_super_secret_key
+```
+
+---
 
 ### Run Airflow
 
