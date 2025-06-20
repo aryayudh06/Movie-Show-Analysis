@@ -22,19 +22,22 @@ st.markdown("""
 
 def get_data_from_mongodb():
     try:
-        client = MongoClient("mongodb://localhost:27017/")
-        db = client["local"]
-        collection = db["MovieShow"]
+        client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=5000)
+        db = client["OLAP"]
+        collection = db["media"]
         data = list(collection.find())
+        if not data:
+            st.warning("Tidak ada data yang ditemukan di koleksi MovieShow")
+            return pd.DataFrame()
         df = pd.DataFrame(data)
         if '_id' in df.columns:
             df.drop(columns=['_id'], inplace=True)
         return df
     except Exception as e:
-        st.error(f"Gagal mengambil data dari MongoDB: {e}")
+        st.error(f"Gagal mengambil data dari MongoDB: {str(e)}")
         return pd.DataFrame()
     finally:
-        if client:
+        if 'client' in locals():
             client.close()
 
 def preprocess_data(df):
