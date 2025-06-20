@@ -25,15 +25,32 @@ def load_and_prepare_data(filepath):
     """Load and preprocess the dataset"""
     data = pd.read_csv(filepath)
     
-    # Convert stringified lists to actual Python lists
-    data['genres'] = data['genres'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+    def safe_literal_eval(x):
+        try:
+            if isinstance(x, str):
+                # Handle cases where the string might be malformed
+                x = x.strip()
+                if x.startswith('[') and x.endswith(']'):
+                    return ast.literal_eval(x)
+                elif ',' in x:
+                    # If it's just comma-separated values without brackets
+                    return [g.strip() for g in x.split(',')]
+                elif x:
+                    # If it's a single genre
+                    return [x]
+            return []  # Return empty list for any other case
+        except (ValueError, SyntaxError):
+            return []
     
-    # Extract the first genre as our label
-    data['genres'] = data['genres'].apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else None)
+    # Convert stringified lists to actual Python lists
+    data['genres'] = data['genres'].apply(safe_literal_eval)
+    
+    # Extract the first genre as our label (or 'Unknown' if empty)
+    data['genres'] = data['genres'].apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else 'Unknown')
     
     # Combine title and summary for text input
     texts = data['title'] + " " + data['summary'].fillna('')
-    labels = data['genres'].fillna('Unknown')
+    labels = data['genres']
     
     return texts, labels
 
@@ -319,7 +336,7 @@ def load_model(save_dir):
 # Main Execution
 if __name__ == "__main__":
     # Load and prepare data
-    texts, labels = load_and_prepare_data("media_data.csv")
+    texts, labels = load_and_prepare_data("dags/Model/data.csv")
     
     # Initialize tokenizer for Optuna
     tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
@@ -334,10 +351,10 @@ if __name__ == "__main__":
         print(f"Current best parameters: {study.best_trial.params}")
     
     study = optuna.create_study(direction="maximize")
-    print(f"Starting optimization with {20} trials...")
+    print(f"Starting optimization with {5} trials...")
     study.optimize(
         lambda trial: objective(trial, texts, labels, tokenizer),
-        n_trials=20,
+        n_trials=5,
         callbacks=[print_trial_status],
         gc_after_trial=True
     )
