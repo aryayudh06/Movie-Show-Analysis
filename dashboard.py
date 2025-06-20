@@ -20,7 +20,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data(ttl=20)
 def get_data_from_mongodb():
     try:
         client = MongoClient("mongodb://localhost:27017/")
@@ -61,12 +60,6 @@ def sidebar_filters(df):
     genre_options = sorted(all_genres)
     selected_genres = st.sidebar.multiselect("Genre", options=genre_options)
 
-    if 'status' in df.columns:
-        status_options = sorted(df['status'].dropna().unique())
-        selected_status = st.sidebar.multiselect("Status (TV Show)", options=status_options)
-    else:
-        selected_status = []
-
     if 'release_year' in df.columns:
         min_year = int(df['release_year'].min())
         max_year = int(df['release_year'].max())
@@ -74,16 +67,13 @@ def sidebar_filters(df):
     else:
         selected_year_range = None
 
-    return min_rating, selected_genres, selected_status, selected_year_range
+    return min_rating, selected_genres, selected_year_range
 
-def filter_data(df, min_rating, selected_genres, selected_status, selected_year_range):
+def filter_data(df, min_rating, selected_genres, selected_year_range):
     df_filtered = df[df['rating'] >= min_rating].copy()
 
     if selected_genres:
         df_filtered = df_filtered[df_filtered['genres'].apply(lambda g: any(s in g for s in selected_genres))]
-
-    if selected_status and 'status' in df_filtered.columns:
-        df_filtered = df_filtered[df_filtered['status'].isin(selected_status)]
 
     if selected_year_range and 'release_year' in df_filtered.columns:
         df_filtered = df_filtered[
@@ -98,8 +88,8 @@ sns.set_theme(style="whitegrid", palette="crest")
 
 if not df.empty:
     df = preprocess_data(df)
-    min_rating, selected_genres, selected_status, selected_year_range = sidebar_filters(df)
-    df_filtered = filter_data(df, min_rating, selected_genres, selected_status, selected_year_range)
+    min_rating, selected_genres, selected_year_range = sidebar_filters(df)
+    df_filtered = filter_data(df, min_rating, selected_genres, selected_year_range)
     df_genres_exploded = df_filtered.explode('genres')
     df_genres_exploded = df_genres_exploded[df_genres_exploded['genres'].notna() & (df_genres_exploded['genres'] != '')]
 
@@ -147,7 +137,7 @@ if not df.empty:
             st.write("Data 'rating' atau 'release_year' tidak tersedia.")
 
     with col2:
-        fig, ax = plt.subplots(figsize=(12, 6)) # Ukuran plot lebih besar
+        fig, ax = plt.subplots(figsize=(12, 11)) # Ukuran plot lebih besar
         sns.histplot(df_filtered['rating'], kde=True, ax=ax, bins=15)
         ax.set_title('Distribusi Rating Film', fontsize=16)
         ax.set_xlabel('Rating', fontsize=12)
@@ -158,36 +148,38 @@ if not df.empty:
 
         top_genres = df_filtered.explode('genres')['genres'].value_counts().nlargest(5)
         if not top_genres.empty:
-            fig, ax = plt.subplots(figsize=(12, 5))
+            fig, ax = plt.subplots(figsize=(12, 6))
             sns.barplot(x=top_genres.values, y=top_genres.index, ax=ax, palette="Blues_d")
             ax.set_title('Top 5 Genre Berdasarkan Jumlah', fontsize=16)
             ax.set_xlabel('Jumlah film', fontsize=12)
             ax.set_ylabel('Genre', fontsize=12)
             st.pyplot(fig, bbox_inches='tight', use_container_width=False)
 
-            genre_rating = df_genres_exploded.groupby('genres')['rating'].mean().sort_values(ascending=False).head(5).reset_index()
-            fig, ax = plt.subplots(figsize=(12, 5))
-            sns.barplot(x='rating', y='genres', data=genre_rating, ax=ax, palette='crest')
-            ax.set_title(f'Top 5 Genre Berdasarkan Rating', fontsize=16)
-            ax.set_xlabel('Rating', fontsize=12)
-            ax.set_ylabel('Genre', fontsize=12)
-            st.pyplot(fig, bbox_inches='tight',use_container_width=False)
-
     with col3:
         if 'rating' in df_filtered.columns and 'title' in df_filtered.columns:
             top_movies = df_filtered.sort_values(by='rating', ascending=False).head(5)
-            fig, ax = plt.subplots(figsize=(12, 4))
+            fig, ax = plt.subplots(figsize=(12, 4.5))
             sns.barplot(x='title', y='rating', data=top_movies, ax=ax, palette='crest')
             ax.set_title(f'Top 5 Film Berdasarkan Rating', fontsize=16)
             ax.set_xlabel('Rating', fontsize=12)
             ax.set_ylabel('Judul Film', fontsize=12)
             st.pyplot(fig, bbox_inches='tight',use_container_width=False)
             
-        fig, ax = plt.subplots(figsize=(12, 13)) # Ukuran plot lebih besar
-        sns.countplot(y='network', data=df_filtered, order=df_filtered['network'].value_counts().head(10).index, palette='Blues_d', ax=ax)
-        ax.set_title('Top 10 Jaringan Film Berdasarkan Jumlah', fontsize=16)
-        ax.set_xlabel('Jaringan', fontsize=12)
+        fig, ax = plt.subplots(figsize=(12, 5))
+        sns.countplot(x='type', data=df_filtered, palette='Blues_d', ax=ax)
+        ax.set_title('Distribusi Tipe Film', fontsize=16)
+        ax.set_xlabel('Tipe', fontsize=12)
         ax.set_ylabel('Jumlah Film', fontsize=12)
         plt.xticks(fontsize=10)
         plt.yticks(fontsize=10)
         st.pyplot(fig)
+
+        genre_rating = df_genres_exploded.groupby('genres')['rating'].mean().sort_values(ascending=False).head(5).reset_index()
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.barplot(x='rating', y='genres', data=genre_rating, ax=ax, palette='crest')
+        ax.set_title(f'Top 5 Genre Berdasarkan Rating', fontsize=16)
+        ax.set_xlabel('Rating', fontsize=12)
+        ax.set_ylabel('Genre', fontsize=12)
+        st.pyplot(fig, bbox_inches='tight',use_container_width=False)
+
+        

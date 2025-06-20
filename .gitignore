@@ -5,7 +5,6 @@ __pycache
 .pyc
 *.log
 .py.log
-config
 config/airflow.cfg
 airflow-webserver.pid
 *.cfg
@@ -14,7 +13,6 @@ airflow-webserver.pid
 *.fernet
 secrets/
 .env
-.env*
 *.env
 airflow/fernet_key.txt
 airflow/secrets/*
