@@ -9,10 +9,10 @@ logger = logging.getLogger(__name__)
 
 class PipelineRunner:
     def __init__(self):
-        base_dir = os.path.dirname(os.path.abspath(__file__))  # direktori file ini
-        self.dataset_importer_script = os.path.join(base_dir, "DatasetImporter.py")
-        self.model_script = os.path.join(base_dir, "model.py")
-        
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))  # direktori Model/
+        self.dataset_importer_script = os.path.join(self.base_dir, "DatasetImporter.py")
+        self.model_script = os.path.join(self.base_dir, "model.py")
+
     def run_script(self, script_path: str, args: Optional[Dict[str, Any]] = None) -> bool:
         """Menjalankan script Python dengan subprocess"""
         if not os.path.exists(script_path):
@@ -20,7 +20,15 @@ class PipelineRunner:
             return False
 
         try:
-            cmd = ["python", script_path]
+            # Lokasi Python interpreter di dalam venv (Windows)
+            venv_python = os.path.join(self.base_dir, "..", "venv", "Scripts", "python.exe")
+            venv_python = os.path.abspath(venv_python)
+
+            if not os.path.exists(venv_python):
+                logger.error(f"Python di venv tidak ditemukan: {venv_python}")
+                return False
+
+            cmd = [venv_python, script_path]
             if args:
                 for key, value in args.items():
                     cmd.extend([f"--{key}", str(value)])
@@ -28,19 +36,18 @@ class PipelineRunner:
             logger.info(f"Menjalankan script: {' '.join(cmd)}")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
             
-            # Log output
             if result.stdout:
-                logger.info(f"Output dari {script_path}:\n{result.stdout}")
+                logger.info(f"Output dari {os.path.basename(script_path)}:\n{result.stdout}")
             if result.stderr:
-                logger.error(f"Error dari {script_path}:\n{result.stderr}")
+                logger.error(f"Error dari {os.path.basename(script_path)}:\n{result.stderr}")
                 
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Gagal menjalankan {script_path}: {str(e)}")
+            logger.error(f"Gagal menjalankan {os.path.basename(script_path)}: {str(e)}")
             logger.error(f"Error output:\n{e.stderr}")
             return False
         except Exception as e:
-            logger.error(f"Error tak terduga saat menjalankan {script_path}: {str(e)}")
+            logger.error(f"Error tak terduga saat menjalankan {os.path.basename(script_path)}: {str(e)}")
             return False
     
     def run_pipeline(self) -> bool:

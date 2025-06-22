@@ -336,7 +336,7 @@ def load_model(save_dir):
 # Main Execution
 if __name__ == "__main__":
     # Load and prepare data
-    texts, labels = load_and_prepare_data("dags/Model/data.csv")
+    texts, labels = load_and_prepare_data("Model/data.csv")
     
     # Initialize tokenizer for Optuna
     tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
@@ -351,10 +351,10 @@ if __name__ == "__main__":
         print(f"Current best parameters: {study.best_trial.params}")
     
     study = optuna.create_study(direction="maximize")
-    print(f"Starting optimization with {5} trials...")
+    print(f"Starting optimization with {1} trials...")
     study.optimize(
         lambda trial: objective(trial, texts, labels, tokenizer),
-        n_trials=5,
+        n_trials=1,
         callbacks=[print_trial_status],
         gc_after_trial=True
     )

@@ -1,4 +1,4 @@
---extra-index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://download.pytorch.org/whl/cpu
 
 aiohttp
 apache-airflow==3.0.1
@@ -15,5 +15,5 @@ seaborn==0.13.2
 streamlit==1.45.1
 tqdm==4.67.1
 transformers==4.47.0
-torch==2.4.0+cu118
-torchvision==0.19.0+cu118
+torch==2.4.0+cpu
+torchvision==0.19.0+cpu

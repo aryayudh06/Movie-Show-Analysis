@@ -46,7 +46,7 @@ Before running the project, make sure you have the following installed:
      sudo apt install -y mongodb
      ```
 
-3. **Start MongoDB Service**:
+3. **Start MongoDB Service and Connect to Connection**:
    - **macOS/Linux**:
      ```bash
      brew services start mongodb/brew/mongodb-community
@@ -75,7 +75,8 @@ mongosh
 If your Airflow setup requires JWT for API authentication, add the following environment variable under the `&airflow-common-env` section in your `docker-compose.yml`:
 
 ```yaml
-AIRFLOW_API_AUTH_JWT_SECRET: my_super_secret_key
+AIRFLOW__API_AUTH__JWT_SECRET: "my_super_secret_key"
+AIRFLOW__API_AUTH__JWT_PRIVATE_KEY_PATH: ""
 ```
 
 Example:
@@ -85,7 +86,8 @@ x-airflow-common-env: &airflow-common-env
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
   AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.jwt_auth'
-  AIRFLOW_API_AUTH_JWT_SECRET: my_super_secret_key
+  AIRFLOW__API__AUTH_JWT_SECRET: "my_super_secret_key"
+  AIRFLOW__API_AUTH__JWT_PRIVATE_KEY_PATH: ""
 ```
 
 ---
@@ -122,17 +124,37 @@ x-airflow-common-env: &airflow-common-env
 ---
 
 ### Run Model Training
+1. Change to folder directory:
 
-1. Install the required Python packages:
+   ```bash
+   cd Movie-Show-Analysis
+   ```
+
+2. Install the required Python packages:
 
    ```bash
    pip install -r requirements.txt
    ```
 
-2. Run the training pipeline:
+3. change to virtual environment
+
+   ```bash
+   venv/Scripts/activate
+   ```
+
+4. Run the training pipeline:
 
    ```bash
    python Model/modelpipeline.py
+   ```
+
+5. If training pipeline error, run the code individually:
+
+   ```bash
+   python Model/DatasetImporter.py
+   ```
+   ```bash
+   python Model/model.py
    ```
 
 ---
