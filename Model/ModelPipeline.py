@@ -12,6 +12,25 @@ class PipelineRunner:
         self.base_dir = os.path.dirname(os.path.abspath(__file__))  # direktori Model/
         self.dataset_importer_script = os.path.join(self.base_dir, "DatasetImporter.py")
         self.model_script = os.path.join(self.base_dir, "model.py")
+        self.model_predict_script = os.path.join(self.base_dir, "model_predict.py")
+        self.model_dir = os.path.join(self.base_dir, "movie_genre_classifier")
+
+    def model_exists(self) -> bool:
+        """Check if the trained model exists"""
+        required_files = [
+            "config.json",
+            "pytorch_model.bin",
+            "label_encoder_classes.npy",
+            "label_encoder_params.npy"
+        ]
+        
+        if not os.path.exists(self.model_dir):
+            return False
+            
+        for file in required_files:
+            if not os.path.exists(os.path.join(self.model_dir, file)):
+                return False
+        return True
 
     def run_script(self, script_path: str, args: Optional[Dict[str, Any]] = None) -> bool:
         """Menjalankan script Python dengan subprocess"""
@@ -54,22 +73,28 @@ class PipelineRunner:
         """Menjalankan seluruh pipeline"""
         logger.info("Memulai pipeline...")
         
-        # Langkah 1: Jalankan DatasetImporter untuk mendapatkan data
-        logger.info("Langkah 1: Menjalankan DatasetImporter...")
-        success = self.run_script(self.dataset_importer_script)
-        if not success:
-            logger.error("Gagal menjalankan DatasetImporter, pipeline dihentikan")
-            return False
-        
-        # Langkah 2: Jalankan model training
-        logger.info("Langkah 2: Menjalankan model training...")
-        success = self.run_script(self.model_script)
-        if not success:
-            logger.error("Gagal menjalankan model training")
-            return False
-        
-        logger.info("Pipeline selesai dijalankan dengan sukses")
-        return True
+        # Check if model exists
+        if self.model_exists():
+            logger.info("Model sudah ada, menjalankan prediksi...")
+            return self.run_script(self.model_predict_script)
+        else:
+            # Langkah 1: Jalankan DatasetImporter untuk mendapatkan data
+            logger.info("Model belum ada, menjalankan pipeline training...")
+            logger.info("Langkah 1: Menjalankan DatasetImporter...")
+            success = self.run_script(self.dataset_importer_script)
+            if not success:
+                logger.error("Gagal menjalankan DatasetImporter, pipeline dihentikan")
+                return False
+            
+            # Langkah 2: Jalankan model training
+            logger.info("Langkah 2: Menjalankan model training...")
+            success = self.run_script(self.model_script)
+            if not success:
+                logger.error("Gagal menjalankan model training")
+                return False
+            
+            logger.info("Pipeline training selesai dijalankan dengan sukses")
+            return True
 
 if __name__ == "__main__":
     pipeline = PipelineRunner()

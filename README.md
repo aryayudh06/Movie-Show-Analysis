@@ -9,7 +9,7 @@ This project aims to analyze movie and streaming show data using an **ETL (Extra
 
 ## 🛠️ Technologies Used
 
-- Python  
+- Python 3.10.0 
 - Apache Airflow  
 - Docker & Docker Compose  
 - Apache Kafka (Streaming Processing)  
@@ -130,16 +130,22 @@ x-airflow-common-env: &airflow-common-env
    cd Movie-Show-Analysis
    ```
 
-2. Install the required Python packages:
+2. Create venv folder (skip this step if venv folder has already created)
 
    ```bash
-   pip install -r requirements.txt
+   py -3.10 -m venv venv
    ```
 
 3. change to virtual environment
 
    ```bash
    venv/Scripts/activate
+   ```
+
+4. Install the required Python packages:
+
+   ```bash
+   pip install -r requirements.txt
    ```
 
 4. Run the training pipeline:
@@ -155,6 +161,12 @@ x-airflow-common-env: &airflow-common-env
    ```
    ```bash
    python Model/model.py
+   ```
+
+6. To predict movie/tv series genre, run the model predict code:
+
+   ```bash
+   python Model/model_predict.py
    ```
 
 ---

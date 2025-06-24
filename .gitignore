@@ -24,3 +24,7 @@ airflow/dags/*.pyc
 airflow/airflow.db
 airflow/webserver_config.py
 /movie_genre_classifier
+venv/
+.venv/
+venv310/
+.venv310/
