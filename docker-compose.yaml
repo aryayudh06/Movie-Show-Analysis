@@ -62,8 +62,6 @@ x-airflow-common:
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
-    AIRFLOW__API_AUTH__JWT_SECRET: "ns6f1Tc/RMVJoEZhfnCRog=="
-    AIRFLOW__API_AUTH__JWT_PRIVATE_KEY_PATH: ""
     
     # yamllint disable rule:line-length
     # Use simple http server on scheduler for health checks
