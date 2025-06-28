@@ -1,6 +1,3 @@
-Sure! Here's your updated `README.md`, now reflecting that the JWT key should be added under the `&airflow-common-env` anchor in the `docker-compose.yml` file:
-
-````markdown
 # 🎬 Movie Show Analysis with Apache Airflow
 
 This project aims to analyze movie and streaming show data using an **ETL (Extract, Transform, Load)** pipeline executed through **Apache Airflow**. The pipeline extracts data from sources, transforms it, and stores it for further analysis.
