@@ -55,7 +55,7 @@ Before running the project, make sure you have the following installed:
 4. **Verify MongoDB is Running**:
    ```bash
    mongo
-````
+   ````
 
 or
 
